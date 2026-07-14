@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>⚠️ ALERTE SLACK</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #ff0000;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            animation: blink 0.5s infinite;
+            overflow: hidden;
+        }
+
+        @keyframes blink {
+            0%, 100% { background: #ff0000; }
+            50% { background: #cc0000; }
+        }
+
+        .container {
+            text-align: center;
+            padding: 30px;
+            color: white;
+        }
+
+        .icon {
+            font-size: 80px;
+            animation: shake 0.3s infinite;
+            display: block;
+            margin-bottom: 20px;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-8px); }
+            75% { transform: translateX(8px); }
+        }
+
+        .title {
+            font-size: 36px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-bottom: 15px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        .message {
+            font-size: 18px;
+            margin-bottom: 10px;
+            opacity: 0.9;
+            max-width: 300px;
+        }
+
+        .channel {
+            font-size: 14px;
+            opacity: 0.7;
+            margin-bottom: 40px;
+        }
+
+        .stop-btn {
+            background: white;
+            color: #ff0000;
+            border: none;
+            border-radius: 50px;
+            padding: 20px 60px;
+            font-size: 24px;
+            font-weight: 900;
+            cursor: pointer;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+            animation: pulse 0.8s infinite;
+            -webkit-tap-highlight-color: transparent;
+            width: 280px;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
+            50% { transform: scale(1.05); box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+        }
+
+        .stop-btn:active {
+            transform: scale(0.95);
+        }
+
+        .stopped {
+            background: #00cc44;
+            animation: none;
+        }
+
+        .stopped-screen {
+            background: #00cc44 !important;
+            animation: none !important;
+        }
+
+        .timer {
+            font-size: 14px;
+            opacity: 0.8;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body id="body">
+    <div class="container">
+        <span class="icon" id="icon">🚨</span>
+        <div class="title">ALERTE SLACK</div>
+        <div class="message" id="message">Nouveau message important</div>
+        <div class="channel" id="channel">Chargement...</div>
+        <button class="stop-btn" id="stopBtn" onclick="stopAlarm()">
+            ⛔ ARRÊTER
+        </button>
+        <div class="timer" id="timer">Alarme active depuis 0s</div>
+    </div>
+
+    <script>
+        // Récupérer les paramètres de l'URL (envoyés par le serveur)
+        const params = new URLSearchParams(window.location.search);
+        const messageText = params.get('message') || 'Nouveau message Slack important';
+        const channelText = params.get('channel') || 'Canal inconnu';
+
+        document.getElementById('message').textContent = messageText;
+        document.getElementById('channel').textContent = '📢 ' + channelText;
+
+        // Contexte audio (doit être lancé par une interaction utilisateur)
+        // On lance tout dès que la page se charge, iOS Safari autorise si la page est ouverte par Pushcut
+        let audioCtx = null;
+        let alarmInterval = null;
+        let timerInterval = null;
+        let secondsElapsed = 0;
+        let isRunning = true;
+
+        function createAudioContext() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            return audioCtx;
+        }
+
+        function playBeep(frequency, duration, type = 'square') {
+            const ctx = createAudioContext();
+            const oscillator = ctx.createOscillator();
+            const gainNode = ctx.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(ctx.destination);
+
+            oscillator.type = type;
+            oscillator.frequency.value = frequency;
+            gainNode.gain.setValueAtTime(0.8, ctx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+
+            oscillator.start(ctx.currentTime);
+            oscillator.stop(ctx.currentTime + duration);
+        }
+
+        function playAlarmSequence() {
+            if (!isRunning) return;
+            // Son d'alarme répétitif : 3 bips forts
+            playBeep(880, 0.2, 'square');
+            setTimeout(() => { if (isRunning) playBeep(660, 0.2, 'square'); }, 250);
+            setTimeout(() => { if (isRunning) playBeep(880, 0.2, 'square'); }, 500);
+        }
+
+        function startAlarm() {
+            // Démarrer immédiatement
+            playAlarmSequence();
+            // Répéter toutes les 800ms
+            alarmInterval = setInterval(playAlarmSequence, 800);
+
+            // Timer affiché à l'écran
+            timerInterval = setInterval(() => {
+                secondsElapsed++;
+                document.getElementById('timer').textContent =
+                    `Alarme active depuis ${secondsElapsed}s`;
+            }, 1000);
+        }
+
+        function stopAlarm() {
+            isRunning = false;
+            clearInterval(alarmInterval);
+            clearInterval(timerInterval);
+
+            // Mettre le son à zéro
+            if (audioCtx) {
+                audioCtx.suspend();
+            }
+
+            // Changer l'affichage
+            document.getElementById('body').className = 'stopped-screen';
+            document.getElementById('body').style.background = '#00cc44';
+            document.getElementById('body').style.animation = 'none';
+            document.getElementById('icon').textContent = '✅';
+            document.getElementById('icon').style.animation = 'none';
+            document.getElementById('stopBtn').textContent = '✅ ALARME ARRÊTÉE';
+            document.getElementById('stopBtn').className = 'stop-btn stopped';
+            document.getElementById('timer').textContent =
+                `Alarme arrêtée après ${secondsElapsed} secondes`;
+        }
+
+        // Démarrer l'alarme dès que la page se charge
+        window.addEventListener('load', () => {
+            // Petit délai pour laisser le navigateur se préparer
+            setTimeout(startAlarm, 300);
+        });
+
+        // Fallback : démarrer au premier toucher si le navigateur bloque l'audio automatique
+        document.addEventListener('touchstart', () => {
+            if (isRunning && (!audioCtx || audioCtx.state === 'suspended')) {
+                startAlarm();
+            }
+        }, { once: true });
+    </script>
+</body>
+</html>
